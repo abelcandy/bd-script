@@ -1,0 +1,696 @@
+--[[
+    Death Ball Roblox Exploit GUI Script
+    Features: Auto Parry (Death Ball specific), ESP View, ESP Line
+    GUI Library: Drawing (Built-in)
+    Date: 2026-02-14
+    Optimized for Death Ball game mechanics
+]]--
+
+-- ============================================================================
+-- CONFIGURATION
+-- ============================================================================
+
+local CONFIG = {
+    -- Panel Settings
+    PANEL_WIDTH = 280,
+    PANEL_HEIGHT = 380,
+    PANEL_X = 50,
+    PANEL_Y = 50,
+    
+    -- Colors
+    ACCENT_COLOR = Color3.fromRGB(255, 100, 50),
+    TEXT_COLOR = Color3.fromRGB(255, 255, 255),
+    BG_COLOR = Color3.fromRGB(25, 25, 35),
+    BUTTON_COLOR = Color3.fromRGB(50, 50, 70),
+    SUCCESS_COLOR = Color3.fromRGB(50, 200, 100),
+    WARNING_COLOR = Color3.fromRGB(255, 150, 50),
+    
+    -- UI Dimensions
+    TOGGLE_SIZE = 20,
+    BUTTON_HEIGHT = 25,
+    SPACING = 10,
+    
+    -- Death Ball Parry Settings
+    PARRY_KEY = Enum.KeyCode.F,
+    PARRY_RANGE = 100,
+    PARRY_COOLDOWN = 0.3,
+    BALL_DETECTION_RANGE = 150,
+    PARRY_PREDICTION = true,
+    
+    -- ESP Settings
+    ESP_UPDATE_INTERVAL = 0.05,
+    ESP_BOX_WIDTH = 50,
+    ESP_BOX_HEIGHT = 80,
+    MAX_ESP_DISTANCE = 500,
+}
+
+-- ============================================================================
+-- MAIN SCRIPT STATE
+-- ============================================================================
+
+local ScriptState = {
+    AutoParryEnabled = false,
+    ESPViewEnabled = false,
+    ESPLineEnabled = false,
+    PanelVisible = true,
+    LastParryTime = 0,
+    ESPDrawings = {},
+    IsDragging = false,
+    DragOffset = {X = 0, Y = 0},
+    GameService = nil,
+    LastDetectedBall = nil,
+    ParryAttempts = 0,
+    ParrySuccesses = 0,
+}
+
+-- ============================================================================
+-- UTILITY FUNCTIONS
+-- ============================================================================
+
+local function SafeCall(func)
+    local success, result = pcall(func)
+    if not success then
+        warn("[Error] " .. tostring(result))
+    end
+    return success, result
+end
+
+local function CleanupESPDrawings()
+    SafeCall(function()
+        for _, drawing in pairs(ScriptState.ESPDrawings) do
+            if drawing and drawing.Visible then
+                drawing:Remove()
+            end
+        end
+        ScriptState.ESPDrawings = {}
+    end)
+end
+
+local function GetLocalPlayer()
+    return game.Players.LocalPlayer
+end
+
+local function GetLocalCharacter()
+    local player = GetLocalPlayer()
+    return player and player.Character or nil
+end
+
+local function GetHumanoidRootPart()
+    local character = GetLocalCharacter()
+    if character then
+        return character:FindFirstChild("HumanoidRootPart")
+    end
+    return nil
+end
+
+local function GetHumanoid()
+    local character = GetLocalCharacter()
+    if character then
+        return character:FindFirstChild("Humanoid")
+    end
+    return nil
+end
+
+-- ============================================================================
+-- DEATH BALL DETECTION & AUTO PARRY
+-- ============================================================================
+
+local function DetectIncomingBalls()
+    local detectedBalls = {}
+    
+    SafeCall(function()
+        local character = GetLocalCharacter()
+        if not character then return end
+        
+        local hrp = GetHumanoidRootPart()
+        if not hrp then return end
+
+        -- Search workspace for death balls
+        for _, obj in pairs(workspace:GetDescendants()) do
+            -- Check if it's a ball-like object
+            if obj:IsA("BasePart") then
+                -- Common Death Ball naming patterns
+                local name = obj.Name:lower()
+                if name:match("ball") or name:match("death") or name:match("projectile") or obj.ClassName == "Part" or obj.ClassName == "Ball" then
+                    local distance = (obj.Position - hrp.Position).Magnitude
+                    
+                    if distance <= CONFIG.BALL_DETECTION_RANGE then
+                        -- Check if ball is moving toward player
+                        if obj:FindFirstChild("BodyVelocity") or obj.Velocity.Magnitude > 1 then
+                            table.insert(detectedBalls, {
+                                Object = obj,
+                                Distance = distance,
+                                Velocity = obj.Velocity,
+                            })
+                        end
+                    end
+                end
+            end
+        end
+    end)
+
+    table.sort(detectedBalls, function(a, b) return a.Distance < b.Distance end)
+    return detectedBalls
+end
+
+local function ShouldParry(ball)
+    if not ball then return false end
+    
+    local hrp = GetHumanoidRootPart()
+    if not hrp then return false end
+
+    -- Calculate if ball is heading toward player
+    local ballToPlayer = hrp.Position - ball.Object.Position
+    local ballVelocity = ball.Object.Velocity
+    
+    if ballVelocity.Magnitude == 0 then return false end
+    
+    -- Normalize and calculate direction alignment
+    local ballDirection = ballVelocity.Unit
+    local ballDirAlignment = ballToPlayer.Unit:Dot(ballDirection)
+    
+    -- Return true if ball is moving toward player (alignment > 0 means heading toward)
+    return ballDirAlignment > 0.3
+end
+
+local function PerformParry()
+    SafeCall(function()
+        local currentTime = tick()
+        if currentTime - ScriptState.LastParryTime < CONFIG.PARRY_COOLDOWN then
+            return
+        end
+
+        local userInputService = game:GetService("UserInputService")
+        if not userInputService then return end
+
+        -- Simulate parry key press
+        local mouse = GetLocalPlayer():GetMouse()
+        if mouse then
+            -- Send parry input
+            keypress(string.byte("f"))
+            
+            ScriptState.LastParryTime = currentTime
+            ScriptState.ParryAttempts = ScriptState.ParryAttempts + 1
+        end
+    end)
+end
+
+local function AutoParryLogic()
+    if not ScriptState.AutoParryEnabled then return end
+
+    SafeCall(function()
+        local character = GetLocalCharacter()
+        if not character or not GetHumanoidRootPart() then return end
+
+        local detectedBalls = DetectIncomingBalls()
+        
+        if #detectedBalls > 0 then
+            local closestBall = detectedBalls[1]
+            
+            if ShouldParry(closestBall) then
+                PerformParry()
+            end
+        end
+    end)
+end
+
+-- ============================================================================
+-- ESP FUNCTIONALITY
+-- ============================================================================
+
+local function GetPlayersForESP()
+    local players = {}
+    SafeCall(function()
+        local localPlayer = GetLocalPlayer()
+        local character = GetLocalCharacter()
+        
+        if not character then return end
+
+        for _, player in pairs(game.Players:GetPlayers()) do
+            if player ~= localPlayer and player.Character then
+                local otherHRP = player.Character:FindFirstChild("HumanoidRootPart")
+                local otherHumanoid = player.Character:FindFirstChild("Humanoid")
+                
+                if otherHRP and otherHumanoid and otherHumanoid.Health > 0 then
+                    table.insert(players, {
+                        Player = player,
+                        Character = player.Character,
+                        HRP = otherHRP,
+                        Humanoid = otherHumanoid,
+                        Name = player.Name,
+                    })
+                end
+            end
+        end
+    end)
+    
+    return players
+end
+
+local function UpdateESPDrawings()
+    if not (ScriptState.ESPViewEnabled or ScriptState.ESPLineEnabled) then
+        CleanupESPDrawings()
+        return
+    end
+
+    SafeCall(function()
+        local localHRP = GetHumanoidRootPart()
+        if not localHRP then
+            CleanupESPDrawings()
+            return
+        end
+
+        CleanupESPDrawings()
+
+        local camera = workspace.CurrentCamera
+        local players = GetPlayersForESP()
+
+        for _, playerData in pairs(players) do
+            local otherHRP = playerData.HRP
+            local distance = (otherHRP.Position - localHRP.Position).Magnitude
+
+            if distance <= CONFIG.MAX_ESP_DISTANCE then
+                -- ESP View - Draw box and label
+                if ScriptState.ESPViewEnabled then
+                    local screenPos, onScreen = camera:WorldToScreenPoint(otherHRP.Position)
+                    
+                    if onScreen then
+                        -- Create box around player
+                        local box = Drawing.new("Square")
+                        box.Filled = false
+                        box.Size = Vector2.new(CONFIG.ESP_BOX_WIDTH, CONFIG.ESP_BOX_HEIGHT)
+                        box.Position = Vector2.new(screenPos.X - CONFIG.ESP_BOX_WIDTH / 2, screenPos.Y - CONFIG.ESP_BOX_HEIGHT / 2)
+                        box.Color = CONFIG.ACCENT_COLOR
+                        box.Thickness = 2
+                        box.ZIndex = 1
+                        box.Transparency = 0.7
+                        box.Visible = true
+                        table.insert(ScriptState.ESPDrawings, box)
+
+                        -- Player name label
+                        local nameLabel = Drawing.new("Text")
+                        nameLabel.Text = playerData.Name
+                        nameLabel.Size = 13
+                        nameLabel.Color = CONFIG.ACCENT_COLOR
+                        nameLabel.Position = Vector2.new(screenPos.X - 25, screenPos.Y - CONFIG.ESP_BOX_HEIGHT / 2 - 15)
+                        nameLabel.ZIndex = 2
+                        nameLabel.Transparency = 0.7
+                        nameLabel.Visible = true
+                        table.insert(ScriptState.ESPDrawings, nameLabel)
+
+                        -- Health bar
+                        local healthPercent = playerData.Humanoid.Health / playerData.Humanoid.MaxHealth
+                        local healthColor = Color3.fromRGB(255 * (1 - healthPercent), 255 * healthPercent, 0)
+                        
+                        local healthBar = Drawing.new("Square")
+                        healthBar.Filled = true
+                        healthBar.Size = Vector2.new(40, 4)
+                        healthBar.Position = Vector2.new(screenPos.X - 20, screenPos.Y + CONFIG.ESP_BOX_HEIGHT / 2 + 5)
+                        healthBar.Color = healthColor
+                        healthBar.ZIndex = 2
+                        healthBar.Transparency = 0.7
+                        healthBar.Visible = true
+                        table.insert(ScriptState.ESPDrawings, healthBar)
+
+                        -- Distance label
+                        local distLabel = Drawing.new("Text")
+                        distLabel.Text = string.format("%.1fm", distance)
+                        distLabel.Size = 11
+                        distLabel.Color = CONFIG.TEXT_COLOR
+                        distLabel.Position = Vector2.new(screenPos.X - 20, screenPos.Y + CONFIG.ESP_BOX_HEIGHT / 2 + 12)
+                        distLabel.ZIndex = 2
+                        distLabel.Transparency = 0.7
+                        distLabel.Visible = true
+                        table.insert(ScriptState.ESPDrawings, distLabel)
+                    end
+                end
+
+                -- ESP Line - Draw line to player
+                if ScriptState.ESPLineEnabled then
+                    local playerScreenPos, playerOnScreen = camera:WorldToScreenPoint(localHRP.Position)
+                    local targetScreenPos, targetOnScreen = camera:WorldToScreenPoint(otherHRP.Position)
+                    
+                    if playerOnScreen and targetOnScreen then
+                        local line = Drawing.new("Line")
+                        line.From = Vector2.new(playerScreenPos.X, playerScreenPos.Y)
+                        line.To = Vector2.new(targetScreenPos.X, targetScreenPos.Y)
+                        line.Color = CONFIG.ACCENT_COLOR
+                        line.Thickness = 2
+                        line.ZIndex = 1
+                        line.Transparency = 0.6
+                        line.Visible = true
+                        table.insert(ScriptState.ESPDrawings, line)
+                    end
+                end
+            end
+        end
+    end)
+end
+
+-- ============================================================================
+-- GUI CREATION FUNCTIONS
+-- ============================================================================
+
+local function CreatePanel()
+    local panel = Drawing.new("Square")
+    panel.Filled = true
+    panel.Size = Vector2.new(CONFIG.PANEL_WIDTH, CONFIG.PANEL_HEIGHT)
+    panel.Position = Vector2.new(CONFIG.PANEL_X, CONFIG.PANEL_Y)
+    panel.Color = CONFIG.BG_COLOR
+    panel.ZIndex = 100
+    panel.Transparency = 0.1
+    panel.Name = "MainPanel"
+    return panel
+end
+
+local function CreateTitleBar(panel)
+    local titleBar = Drawing.new("Square")
+    titleBar.Filled = true
+    titleBar.Size = Vector2.new(CONFIG.PANEL_WIDTH, 35)
+    titleBar.Position = panel.Position
+    titleBar.Color = CONFIG.ACCENT_COLOR
+    titleBar.ZIndex = 101
+    titleBar.Transparency = 0.15
+    titleBar.Name = "TitleBar"
+    return titleBar
+end
+
+local function CreateTitleText(titleBar)
+    local text = Drawing.new("Text")
+    text.Text = "Death Ball Menu"
+    text.Size = 18
+    text.Font = 2
+    text.Position = Vector2.new(titleBar.Position.X + 10, titleBar.Position.Y + 8)
+    text.Color = CONFIG.TEXT_COLOR
+    text.ZIndex = 102
+    text.Transparency = 0.1
+    text.Name = "TitleText"
+    return text
+end
+
+local function CreateCloseButton(titleBar)
+    local button = Drawing.new("Square")
+    button.Filled = true
+    button.Size = Vector2.new(25, 25)
+    button.Position = Vector2.new(titleBar.Position.X + CONFIG.PANEL_WIDTH - 30, titleBar.Position.Y + 5)
+    button.Color = Color3.fromRGB(220, 50, 50)
+    button.ZIndex = 102
+    button.Transparency = 0.2
+    button.Name = "CloseButton"
+    return button
+end
+
+local function CreateCloseButtonText(closeButton)
+    local text = Drawing.new("Text")
+    text.Text = "X"
+    text.Size = 16
+    text.Font = 2
+    text.Position = Vector2.new(closeButton.Position.X + 6, closeButton.Position.Y + 4)
+    text.Color = CONFIG.TEXT_COLOR
+    text.ZIndex = 103
+    text.Transparency = 0.2
+    text.Name = "CloseButtonText"
+    return text
+end
+
+local function CreateToggle(yPosition, label, panel)
+    local toggle = {
+        Background = Drawing.new("Square"),
+        Toggle = Drawing.new("Square"),
+        Label = Drawing.new("Text"),
+        Enabled = false,
+    }
+
+    -- Background
+    toggle.Background.Filled = true
+    toggle.Background.Size = Vector2.new(CONFIG.TOGGLE_SIZE, CONFIG.TOGGLE_SIZE)
+    toggle.Background.Position = Vector2.new(panel.Position.X + 15, panel.Position.Y + yPosition)
+    toggle.Background.Color = CONFIG.BUTTON_COLOR
+    toggle.Background.ZIndex = 101
+    toggle.Background.Transparency = 0.15
+    toggle.Background.Name = "ToggleBG_" .. label
+
+    -- Toggle indicator
+    toggle.Toggle.Filled = true
+    toggle.Toggle.Size = Vector2.new(CONFIG.TOGGLE_SIZE - 4, CONFIG.TOGGLE_SIZE - 4)
+    toggle.Toggle.Position = Vector2.new(toggle.Background.Position.X + 2, toggle.Background.Position.Y + 2)
+    toggle.Toggle.Color = Color3.fromRGB(80, 80, 100)
+    toggle.Toggle.ZIndex = 102
+    toggle.Toggle.Transparency = 0.2
+    toggle.Toggle.Name = "ToggleIndicator_" .. label
+
+    -- Label
+    toggle.Label.Text = label
+    toggle.Label.Size = 14
+    toggle.Label.Font = 2
+    toggle.Label.Position = Vector2.new(toggle.Background.Position.X + 35, toggle.Background.Position.Y + 3)
+    toggle.Label.Color = CONFIG.TEXT_COLOR
+    toggle.Label.ZIndex = 102
+    toggle.Label.Transparency = 0.15
+    toggle.Label.Name = "ToggleLabel_" .. label
+
+    return toggle
+end
+
+local function UpdateToggleVisual(toggle)
+    if toggle.Enabled then
+        toggle.Toggle.Color = CONFIG.SUCCESS_COLOR
+    else
+        toggle.Toggle.Color = Color3.fromRGB(80, 80, 100)
+    end
+end
+
+local function CreateStatusText(panel, yPosition, text)
+    local statusText = Drawing.new("Text")
+    statusText.Text = text
+    statusText.Size = 12
+    statusText.Font = 1
+    statusText.Position = Vector2.new(panel.Position.X + 15, panel.Position.Y + yPosition)
+    statusText.Color = CONFIG.TEXT_COLOR
+    statusText.ZIndex = 101
+    statusText.Transparency = 0.15
+    statusText.Name = "StatusText"
+    return statusText
+end
+
+-- ============================================================================
+-- INPUT HANDLING
+-- ============================================================================
+
+local function SetupInputHandling(panel, titleBar, closeButton, toggles, statusText)
+    local userInputService = game:GetService("UserInputService")
+    if not userInputService then return end
+
+    local mouse = GetLocalPlayer():GetMouse()
+
+    userInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+
+        local mousePos = mouse.X
+        local mouseY = mouse.Y
+
+        -- Close button logic
+        if mousePos >= closeButton.Position.X and mousePos <= closeButton.Position.X + 25 and
+           mouseY >= closeButton.Position.Y and mouseY <= closeButton.Position.Y + 25 then
+            ScriptState.PanelVisible = not ScriptState.PanelVisible
+            
+            -- Toggle visibility for all UI elements
+            local function SetVisibility(visible)
+                panel.Visible = visible
+                titleBar.Visible = visible
+                closeButton.Visible = visible
+                for _, toggle in pairs(toggles) do
+                    toggle.Background.Visible = visible
+                    toggle.Toggle.Visible = visible
+                    toggle.Label.Visible = visible
+                end
+                statusText.Visible = visible
+            end
+            
+            SetVisibility(ScriptState.PanelVisible)
+            return
+        end
+
+        -- Toggle buttons
+        for idx, toggle in pairs(toggles) do
+            if mousePos >= toggle.Background.Position.X and mousePos <= toggle.Background.Position.X + CONFIG.TOGGLE_SIZE and
+               mouseY >= toggle.Background.Position.Y and mouseY <= toggle.Background.Position.Y + CONFIG.TOGGLE_SIZE then
+                toggle.Enabled = not toggle.Enabled
+                UpdateToggleVisual(toggle)
+
+                if idx == 1 then
+                    ScriptState.AutoParryEnabled = toggle.Enabled
+                elseif idx == 2 then
+                    ScriptState.ESPViewEnabled = toggle.Enabled
+                elseif idx == 3 then
+                    ScriptState.ESPLineEnabled = toggle.Enabled
+                end
+
+                return
+            end
+        end
+
+        -- Drag panel
+        if mousePos >= titleBar.Position.X and mousePos <= titleBar.Position.X + CONFIG.PANEL_WIDTH and
+           mouseY >= titleBar.Position.Y and mouseY <= titleBar.Position.Y + 35 then
+            ScriptState.IsDragging = true
+            ScriptState.DragOffset.X = mousePos - panel.Position.X
+            ScriptState.DragOffset.Y = mouseY - panel.Position.Y
+        end
+    end)
+
+    userInputService.InputEnded:Connect(function(input, gameProcessed)
+        ScriptState.IsDragging = false
+    end)
+
+    -- Mouse movement for dragging
+    mouse.Move:Connect(function()
+        if ScriptState.IsDragging then
+            local newX = mouse.X - ScriptState.DragOffset.X
+            local newY = mouse.Y - ScriptState.DragOffset.Y
+
+            -- Update panel and title bar
+            panel.Position = Vector2.new(newX, newY)
+            titleBar.Position = Vector2.new(newX, newY)
+            closeButton.Position = Vector2.new(newX + CONFIG.PANEL_WIDTH - 30, newY + 5)
+
+            -- Update toggles and other text
+            local yOffsets = {45, 95, 145}
+            for idx, toggle in pairs(toggles) do
+                local yOffset = yOffsets[idx] or (45 + (idx - 1) * 50)
+                toggle.Background.Position = Vector2.new(newX + 15, newY + yOffset)
+                toggle.Toggle.Position = Vector2.new(toggle.Background.Position.X + 2, toggle.Background.Position.Y + 2)
+                toggle.Label.Position = Vector2.new(toggle.Background.Position.X + 35, toggle.Background.Position.Y + 3)
+            end
+
+            statusText.Position = Vector2.new(newX + 15, newY + 200)
+        end
+    end)
+end
+
+-- ============================================================================
+-- INITIALIZATION
+-- ============================================================================
+
+local GUI = {}
+
+local function InitializeGUI()
+    SafeCall(function()
+        -- Create main panel
+        local panel = CreatePanel()
+        local titleBar = CreateTitleBar(panel)
+        local titleText = CreateTitleText(titleBar)
+        local closeButton = CreateCloseButton(titleBar)
+        local closeButtonText = CreateCloseButtonText(closeButton)
+
+        -- Create toggles
+        local toggles = {
+            CreateToggle(45, "Auto Parry", panel),
+            CreateToggle(95, "ESP View", panel),
+            CreateToggle(145, "ESP Line", panel),
+        }
+
+        -- Create status text
+        local statusText = CreateStatusText(panel, 200, "Status: Idle")
+
+        -- Setup input handling
+        SetupInputHandling(panel, titleBar, closeButton, toggles, statusText)
+
+        -- Store elements for cleanup
+        GUI.Panel = panel
+        GUI.TitleBar = titleBar
+        GUI.TitleText = titleText
+        GUI.CloseButton = closeButton
+        GUI.CloseButtonText = closeButtonText
+        GUI.Toggles = toggles
+        GUI.StatusText = statusText
+
+        print("✓ Death Ball Exploit GUI initialized successfully!")
+        print("✓ Features available: Auto Parry, ESP View, ESP Line")
+        print("✓ Panel is draggable and closable")
+    end)
+end
+
+-- ============================================================================
+-- MAIN LOOP
+-- ============================================================================
+
+local function UpdateStatusText()
+    SafeCall(function()
+        if GUI.StatusText then
+            local status = ""
+            if ScriptState.AutoParryEnabled then
+                status = status .. "Parry: ON  "
+            else
+                status = status .. "Parry: OFF  "
+            end
+
+            if ScriptState.ESPViewEnabled then
+                status = status .. "ESP: ON"
+            else
+                status = status .. "ESP: OFF"
+            end
+
+            GUI.StatusText.Text = status
+        end
+    end)
+end
+
+local function MainLoop()
+    while true do
+        SafeCall(function()
+            AutoParryLogic()
+            UpdateESPDrawings()
+            UpdateStatusText()
+        end)
+        wait(CONFIG.ESP_UPDATE_INTERVAL)
+    end
+end
+
+-- ============================================================================
+-- CLEANUP FUNCTION
+-- ============================================================================
+
+local function Cleanup()
+    SafeCall(function()
+        if GUI.Panel then GUI.Panel:Remove() end
+        if GUI.TitleBar then GUI.TitleBar:Remove() end
+        if GUI.TitleText then GUI.TitleText:Remove() end
+        if GUI.CloseButton then GUI.CloseButton:Remove() end
+        if GUI.CloseButtonText then GUI.CloseButtonText:Remove() end
+        if GUI.StatusText then GUI.StatusText:Remove() end
+
+        for _, toggle in pairs(GUI.Toggles or {}) do
+            if toggle.Background then toggle.Background:Remove() end
+            if toggle.Toggle then toggle.Toggle:Remove() end
+            if toggle.Label then toggle.Label:Remove() end
+        end
+
+        CleanupESPDrawings()
+
+        print("✓ Death Ball Script cleaned up!")
+    end)
+end
+
+-- ============================================================================
+-- STARTUP
+-- ============================================================================
+
+if not game:IsLoaded() then
+    game.Loaded:Wait()
+end
+
+wait(1) -- Give game time to fully load
+
+InitializeGUI()
+
+-- Run main loop in background
+task.spawn(MainLoop)
+
+-- Cleanup on script stop
+game.Players.LocalPlayer.CharacterAdded:Connect(function()
+    CleanupESPDrawings()
+end)
+
+print("✓ Death Ball Exploit Script loaded successfully!")
+print("✓ Script v1.0 - Enjoy!")
