@@ -1,10 +1,9 @@
 --[[
-    Death Ball Roblox Exploit GUI Script - DELTA EXECUTOR VERSION v3.0
-    Features: Auto Parry, ESP View, ESP Line
+    Death Ball Roblox Exploit GUI Script - DELTA EXECUTOR VERSION v5.0
+    Features: Auto Parry, ESP View, Tag System (Owner/User)
     GUI Library: Roblox ScreenGui (nativo)
     Date: 2026-02-14
-    Otimizado para Delta Executor
-    Design: Inspirado em painel moderno com sidebar
+    Design: Preto e Cinza com Sistema de Tags Flutuantes
 ]]--
 
 -- ============================================================================
@@ -13,23 +12,33 @@
 
 local CONFIG = {
     -- Configurações do Painel
-    MAIN_PANEL_WIDTH = 600,
-    MAIN_PANEL_HEIGHT = 450,
-    SIDEBAR_WIDTH = 150,
+    MAIN_PANEL_WIDTH = 700,
+    MAIN_PANEL_HEIGHT = 500,
+    SIDEBAR_WIDTH = 180,
     PANEL_X = 50,
     PANEL_Y = 50,
     
-    -- Cores
-    SIDEBAR_COLOR = Color3.fromRGB(20, 20, 25),
-    MAIN_BG_COLOR = Color3.fromRGB(30, 30, 40),
-    HEADER_COLOR = Color3.fromRGB(15, 15, 20),
-    BUTTON_COLOR = Color3.fromRGB(50, 50, 70),
-    BUTTON_HOVER_COLOR = Color3.fromRGB(70, 70, 100),
-    ACCENT_COLOR = Color3.fromRGB(255, 100, 50),
-    BUTTON_ACCENT_COLOR = Color3.fromRGB(220, 50, 50),
+    -- Cores (Apenas Preto e Cinza)
+    SIDEBAR_COLOR = Color3.fromRGB(20, 20, 20),
+    MAIN_BG_COLOR = Color3.fromRGB(35, 35, 35),
+    HEADER_COLOR = Color3.fromRGB(15, 15, 15),
+    BUTTON_COLOR = Color3.fromRGB(50, 50, 50),
+    BUTTON_HOVER_COLOR = Color3.fromRGB(70, 70, 70),
+    BUTTON_ACTIVE_COLOR = Color3.fromRGB(60, 60, 60),
+    TAB_HIGHLIGHT_COLOR = Color3.fromRGB(100, 100, 100),
     TEXT_COLOR = Color3.fromRGB(200, 200, 200),
     TEXT_TITLE = Color3.fromRGB(255, 255, 255),
-    SUCCESS_COLOR = Color3.fromRGB(50, 200, 100),
+    TEXT_SECONDARY = Color3.fromRGB(150, 150, 150),
+    ACCENT_GRAY = Color3.fromRGB(120, 120, 120),
+    DARK_GRAY = Color3.fromRGB(40, 40, 40),
+    
+    -- Owner (Você)
+    OWNER_NAME = "YS2RF", -- Seu username
+    
+    -- Tag Settings
+    TAG_DISTANCE = 100,
+    TAG_SIZE = 15,
+    TAG_OFFSET_Y = 2.5,
     
     -- Death Ball
     PARRY_RANGE = 100,
@@ -48,14 +57,17 @@ local CONFIG = {
 local ScriptState = {
     AutoParryEnabled = false,
     ESPViewEnabled = false,
-    ESPLineEnabled = false,
+    TagsEnabled = true,
     PanelVisible = true,
     LastParryTime = 0,
     ESPDrawings = {},
+    TagObjects = {},
     IsDragging = false,
     DragOffset = {X = 0, Y = 0},
     ParryAttempts = 0,
+    ParrySuccesses = 0,
     CurrentTab = "Home",
+    RGBValue = 0,
 }
 
 -- ============================================================================
@@ -106,6 +118,15 @@ local function CleanupESP()
     end)
 end
 
+-- Função para gerar cor RGB cíclica
+local function GetRGBColor(hue)
+    local r = math.sin(hue) * 0.5 + 0.5
+    local g = math.sin(hue + 2.094) * 0.5 + 0.5
+    local b = math.sin(hue + 4.189) * 0.5 + 0.5
+    
+    return Color3.new(r, g, b)
+end
+
 -- Função para criar animação de hover
 local function CreateHoverAnimation(element, originalColor, hoverColor)
     local tweenService = game:GetService("TweenService")
@@ -120,6 +141,127 @@ local function CreateHoverAnimation(element, originalColor, hoverColor)
         local tweenInfo = TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
         local tween = tweenService:Create(element, tweenInfo, {BackgroundColor3 = originalColor})
         tween:Play()
+    end)
+end
+
+-- ============================================================================
+-- SISTEMA DE TAGS FLUTUANTES
+-- ============================================================================
+
+local function CreateTag(player, isOwner)
+    SafeCall(function()
+        local character = player.Character
+        if not character then return end
+
+        local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+        if not humanoidRootPart then return end
+
+        -- Criar BillboardGui para a tag
+        local billboardGui = Instance.new("BillboardGui")
+        billboardGui.Name = "TagBillboard_" .. player.Name
+        billboardGui.Size = UDim2.new(4, 0, 2, 0)
+        billboardGui.StudsOffset = Vector3.new(0, CONFIG.TAG_OFFSET_Y, 0)
+        billboardGui.MaxDistance = CONFIG.TAG_DISTANCE
+        billboardGui.Parent = humanoidRootPart
+
+        -- Criar TextLabel para a tag
+        local tagLabel = Instance.new("TextLabel")
+        tagLabel.Name = "TagLabel"
+        tagLabel.Size = UDim2.new(1, 0, 1, 0)
+        tagLabel.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+        tagLabel.BackgroundTransparency = 0.1
+        tagLabel.BorderSizePixel = 2
+        tagLabel.BorderColor3 = Color3.fromRGB(100, 100, 100)
+        tagLabel.Font = Enum.Font.GothamBold
+        tagLabel.TextSize = CONFIG.TAG_SIZE
+        tagLabel.Parent = billboardGui
+
+        if isOwner then
+            tagLabel.Text = "👑 OWNER"
+            tagLabel.TextColor3 = GetRGBColor(0)
+        else
+            tagLabel.Text = "👤 USER"
+            tagLabel.TextColor3 = CONFIG.TEXT_COLOR
+        end
+
+        -- Adicionar UICorner para estilo arredondado
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0, 6)
+        corner.Parent = tagLabel
+
+        table.insert(ScriptState.TagObjects, {
+            Billboard = billboardGui,
+            Label = tagLabel,
+            Player = player,
+            IsOwner = isOwner
+        })
+
+        return billboardGui
+    end)
+end
+
+local function RemoveTag(player)
+    SafeCall(function()
+        for idx, tag in ipairs(ScriptState.TagObjects) do
+            if tag.Player == player then
+                tag.Billboard:Destroy()
+                table.remove(ScriptState.TagObjects, idx)
+                break
+            end
+        end
+    end)
+end
+
+local function UpdateTags()
+    if not ScriptState.TagsEnabled then
+        for _, tag in ipairs(ScriptState.TagObjects) do
+            tag.Billboard.Enabled = false
+        end
+        return
+    end
+
+    SafeCall(function()
+        local localPlayer = GetLocalPlayer()
+        local localCharacter = GetLocalCharacter()
+
+        if not localCharacter then return end
+
+        -- Verificar cada tag existente
+        for idx, tag in ipairs(ScriptState.TagObjects) do
+            if not tag.Player or not tag.Player.Parent then
+                -- Jogador saiu do jogo
+                tag.Billboard:Destroy()
+                table.remove(ScriptState.TagObjects, idx)
+            else
+                -- Atualizar visibilidade
+                tag.Billboard.Enabled = true
+
+                -- Atualizar cor RGB para Owner
+                if tag.IsOwner then
+                    ScriptState.RGBValue = (ScriptState.RGBValue + 0.05) % (2 * math.pi)
+                    tag.Label.TextColor3 = GetRGBColor(ScriptState.RGBValue)
+                end
+            end
+        end
+
+        -- Criar tags para novos jogadores
+        for _, player in pairs(game.Players:GetPlayers()) do
+            if player ~= localPlayer and player.Character then
+                local existingTag = false
+                for _, tag in ipairs(ScriptState.TagObjects) do
+                    if tag.Player == player then
+                        existingTag = true
+                        break
+                    end
+                end
+
+                if not existingTag then
+                    -- Verificar se é o owner
+                    local isOwner = player.Name == CONFIG.OWNER_NAME
+                    CreateTag(player, isOwner)
+                end
+            end
+        end
     end)
 end
 
@@ -212,7 +354,7 @@ local function AutoParryLogic()
 end
 
 -- ============================================================================
--- FUNCIONALIDADE ESP
+-- FUNCIONALIDADE ESP VIEW
 -- ============================================================================
 
 local function GetPlayersForESP()
@@ -253,9 +395,9 @@ local function CreateESPLabel(player, hrp)
 
     local label = Instance.new("TextLabel")
     label.Name = "ESPLabel_" .. player.Name
-    label.BackgroundColor3 = CONFIG.MAIN_BG_COLOR
-    label.BackgroundTransparency = 0.3
-    label.TextColor3 = CONFIG.ACCENT_COLOR
+    label.BackgroundColor3 = CONFIG.DARK_GRAY
+    label.BackgroundTransparency = 0.2
+    label.TextColor3 = CONFIG.ACCENT_GRAY
     label.TextSize = 14
     label.Font = Enum.Font.GothamBold
     label.Size = UDim2.new(0, 120, 0, 50)
@@ -301,7 +443,7 @@ local function CreateESPLabel(player, hrp)
 end
 
 local function UpdateESPDrawings()
-    if not (ScriptState.ESPViewEnabled or ScriptState.ESPLineEnabled) then
+    if not ScriptState.ESPViewEnabled then
         CleanupESP()
         return
     end
@@ -320,66 +462,10 @@ local function UpdateESPDrawings()
             local distance = (otherHRP.Position - localHRP.Position).Magnitude
 
             if distance <= CONFIG.MAX_ESP_DISTANCE then
-                if ScriptState.ESPViewEnabled then
-                    local existingLabel = game.Players.LocalPlayer.PlayerGui:FindFirstChild("ESP_" .. playerData.Name)
-                    if not existingLabel then
-                        local espGui = CreateESPLabel(playerData.Player, otherHRP)
-                        table.insert(ScriptState.ESPDrawings, espGui)
-                    end
-                end
-
-                if ScriptState.ESPLineEnabled then
-                    local lineGui = Instance.new("ScreenGui")
-                    lineGui.Name = "ESPLine_" .. playerData.Name
-                    lineGui.ResetOnSpawn = false
-                    lineGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-                    lineGui.Parent = game.Players.LocalPlayer:WaitForChild("PlayerGui")
-
-                    local frame = Instance.new("Frame")
-                    frame.Name = "Line"
-                    frame.BackgroundColor3 = CONFIG.ACCENT_COLOR
-                    frame.BorderSizePixel = 0
-                    frame.BackgroundTransparency = 0.3
-                    frame.Parent = lineGui
-
-                    local camera = workspace.CurrentCamera
-                    
-                    local function UpdateLine()
-                        SafeCall(function()
-                            if not localHRP or not otherHRP or not localHRP.Parent or not otherHRP.Parent then
-                                lineGui:Destroy()
-                                return
-                            end
-
-                            local playerScreenPos, playerOnScreen = camera:WorldToScreenPoint(localHRP.Position)
-                            local targetScreenPos, targetOnScreen = camera:WorldToScreenPoint(otherHRP.Position)
-                            
-                            if playerOnScreen and targetOnScreen then
-                                local dx = targetScreenPos.X - playerScreenPos.X
-                                local dy = targetScreenPos.Y - playerScreenPos.Y
-                                local distance = math.sqrt(dx * dx + dy * dy)
-                                local angle = math.atan2(dy, dx)
-
-                                frame.Size = UDim2.new(0, distance, 0, 2)
-                                frame.Position = UDim2.new(0, playerScreenPos.X, 0, playerScreenPos.Y)
-                                frame.Rotation = math.deg(angle)
-                                frame.Visible = true
-                            else
-                                frame.Visible = false
-                            end
-                        end)
-                    end
-
-                    local connection
-                    connection = game:GetService("RunService").RenderStepped:Connect(function()
-                        if not lineGui.Parent then
-                            connection:Disconnect()
-                            return
-                        end
-                        UpdateLine()
-                    end)
-
-                    table.insert(ScriptState.ESPDrawings, lineGui)
+                local existingLabel = game.Players.LocalPlayer.PlayerGui:FindFirstChild("ESP_" .. playerData.Name)
+                if not existingLabel then
+                    local espGui = CreateESPLabel(playerData.Player, otherHRP)
+                    table.insert(ScriptState.ESPDrawings, espGui)
                 end
             end
         end
@@ -387,7 +473,7 @@ local function UpdateESPDrawings()
 end
 
 -- ============================================================================
--- CRIAÇÃO DA GUI - NOVO DESIGN
+-- CRIAÇÃO DA GUI - REDESIGN PRETO E CINZA
 -- ============================================================================
 
 local function CreateUI()
@@ -400,13 +486,13 @@ local function CreateUI()
     screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     screenGui.Parent = playerGui
 
-    -- Painel Principal (Com Sidebar)
+    -- Painel Principal
     local mainPanel = Instance.new("Frame")
     mainPanel.Name = "MainPanel"
     mainPanel.BackgroundColor3 = CONFIG.MAIN_BG_COLOR
     mainPanel.BackgroundTransparency = 0.05
     mainPanel.BorderSizePixel = 2
-    mainPanel.BorderColor3 = CONFIG.ACCENT_COLOR
+    mainPanel.BorderColor3 = CONFIG.ACCENT_GRAY
     mainPanel.Size = UDim2.new(0, CONFIG.MAIN_PANEL_WIDTH, 0, CONFIG.MAIN_PANEL_HEIGHT)
     mainPanel.Position = UDim2.new(0, CONFIG.PANEL_X, 0, CONFIG.PANEL_Y)
     mainPanel.Parent = screenGui
@@ -415,21 +501,10 @@ local function CreateUI()
     local header = Instance.new("Frame")
     header.Name = "Header"
     header.BackgroundColor3 = CONFIG.HEADER_COLOR
-    header.BorderSizePixel = 0
+    header.BorderSizePixel = 1
+    header.BorderColor3 = CONFIG.ACCENT_GRAY
     header.Size = UDim2.new(1, 0, 0, 50)
     header.Parent = mainPanel
-
-    -- Logo/Version
-    local versionLabel = Instance.new("TextLabel")
-    versionLabel.BackgroundTransparency = 1
-    versionLabel.TextColor3 = CONFIG.TEXT_COLOR
-    versionLabel.TextSize = 13
-    versionLabel.Font = Enum.Font.GothamBold
-    versionLabel.Text = "v3.0.0"
-    versionLabel.Size = UDim2.new(0, 80, 1, 0)
-    versionLabel.Position = UDim2.new(0, 10, 0, 0)
-    versionLabel.TextXAlignment = Enum.TextXAlignment.Left
-    versionLabel.Parent = header
 
     -- Título
     local titleLabel = Instance.new("TextLabel")
@@ -437,72 +512,99 @@ local function CreateUI()
     titleLabel.TextColor3 = CONFIG.TEXT_TITLE
     titleLabel.TextSize = 20
     titleLabel.Font = Enum.Font.GothamBold
-    titleLabel.Text = "Death Ball Exploit"
-    titleLabel.Size = UDim2.new(0.5, 0, 1, 0)
-    titleLabel.Position = UDim2.new(0.2, 0, 0, 0)
-    titleLabel.TextXAlignment = Enum.TextXAlignment.Center
+    titleLabel.Text = "⚙️ Death Ball Exploit"
+    titleLabel.Size = UDim2.new(0.7, 0, 1, 0)
+    titleLabel.Position = UDim2.new(0, 20, 0, 0)
+    titleLabel.TextXAlignment = Enum.TextXAlignment.Left
     titleLabel.Parent = header
 
     -- Close Button
     local closeButton = Instance.new("TextButton")
     closeButton.Name = "CloseButton"
-    closeButton.BackgroundColor3 = CONFIG.BUTTON_ACCENT_COLOR
-    closeButton.BackgroundTransparency = 0.3
+    closeButton.BackgroundColor3 = CONFIG.BUTTON_COLOR
+    closeButton.BackgroundTransparency = 0
     closeButton.TextColor3 = CONFIG.TEXT_COLOR
     closeButton.TextSize = 14
     closeButton.Font = Enum.Font.GothamBold
-    closeButton.Text = "X"
+    closeButton.Text = "✕"
     closeButton.BorderSizePixel = 0
     closeButton.Size = UDim2.new(0, 40, 0, 40)
     closeButton.Position = UDim2.new(1, -45, 0.5, -20)
     closeButton.Parent = header
 
-    CreateHoverAnimation(closeButton, CONFIG.BUTTON_ACCENT_COLOR, Color3.fromRGB(255, 100, 100))
+    CreateHoverAnimation(closeButton, CONFIG.BUTTON_COLOR, CONFIG.BUTTON_HOVER_COLOR)
 
     -- ========== SIDEBAR ==========
     local sidebar = Instance.new("Frame")
     sidebar.Name = "Sidebar"
     sidebar.BackgroundColor3 = CONFIG.SIDEBAR_COLOR
-    sidebar.BorderSizePixel = 0
+    sidebar.BorderSizePixel = 1
+    sidebar.BorderColor3 = CONFIG.ACCENT_GRAY
     sidebar.Size = UDim2.new(0, CONFIG.SIDEBAR_WIDTH, 1, -50)
     sidebar.Position = UDim2.new(0, 0, 0, 50)
     sidebar.Parent = mainPanel
 
-    -- Tabs
-    local tabs = {"Home", "Combat", "Render", "Settings"}
+    -- Tabs com funções reais
+    local tabs = {
+        {name = "🏠 Home", icon = "Home", func = function() end},
+        {name = "⚔️ Combat", icon = "Combat", func = function() end},
+        {name = "🏷️ Tags", icon = "Tags", func = function() end},
+        {name = "⚙️ Settings", icon = "Settings", func = function() end},
+    }
+
     local tabButtons = {}
 
-    for idx, tabName in ipairs(tabs) do
+    for idx, tab in ipairs(tabs) do
         local tabButton = Instance.new("TextButton")
-        tabButton.Name = tabName .. "_Tab"
+        tabButton.Name = tab.name .. "_Tab"
         tabButton.BackgroundColor3 = CONFIG.BUTTON_COLOR
-        tabButton.BackgroundTransparency = 0.4
+        tabButton.BackgroundTransparency = 0
         tabButton.TextColor3 = CONFIG.TEXT_COLOR
         tabButton.TextSize = 12
         tabButton.Font = Enum.Font.GothamBold
-        tabButton.Text = tabName
-        tabButton.BorderSizePixel = 0
-        tabButton.Size = UDim2.new(1, -10, 0, 40)
-        tabButton.Position = UDim2.new(0, 5, 0, (idx - 1) * 45 + 10)
+        tabButton.Text = tab.name
+        tabButton.BorderSizePixel = 1
+        tabButton.BorderColor3 = CONFIG.DARK_GRAY
+        tabButton.Size = UDim2.new(1, -8, 0, 45)
+        tabButton.Position = UDim2.new(0, 4, 0, (idx - 1) * 50 + 10)
         tabButton.Parent = sidebar
 
-        local tabCorner = Instance.new("UICorner")
-        tabCorner.CornerRadius = UDim.new(0, 5)
-        tabCorner.Parent = tabButton
+        local isActive = idx == 1
+
+        tabButton.MouseButton1Click:Connect(function()
+            -- Remove highlight dos outros botões
+            for _, btn in ipairs(tabButtons) do
+                btn.Button.BackgroundColor3 = CONFIG.BUTTON_COLOR
+                btn.Button.BorderColor3 = CONFIG.DARK_GRAY
+            end
+
+            -- Adiciona highlight ao botão atual
+            tabButton.BackgroundColor3 = CONFIG.TAB_HIGHLIGHT_COLOR
+            tabButton.BorderColor3 = CONFIG.ACCENT_GRAY
+
+            ScriptState.CurrentTab = tab.icon
+
+            -- Executa a função da aba
+            if tab.func then
+                tab.func()
+            end
+        end)
 
         CreateHoverAnimation(tabButton, CONFIG.BUTTON_COLOR, CONFIG.BUTTON_HOVER_COLOR)
 
-        tabButton.MouseButton1Click:Connect(function()
-            ScriptState.CurrentTab = tabName
-        end)
+        if isActive then
+            tabButton.BackgroundColor3 = CONFIG.TAB_HIGHLIGHT_COLOR
+            tabButton.BorderColor3 = CONFIG.ACCENT_GRAY
+        end
 
-        table.insert(tabButtons, {Button = tabButton, Name = tabName})
+        table.insert(tabButtons, {Button = tabButton, Name = tab.icon})
     end
 
     -- ========== CONTENT AREA ==========
     local contentArea = Instance.new("Frame")
     contentArea.Name = "ContentArea"
-    contentArea.BackgroundTransparency = 1
+    contentArea.BackgroundColor3 = CONFIG.MAIN_BG_COLOR
+    contentArea.BackgroundTransparency = 0
     contentArea.BorderSizePixel = 0
     contentArea.Size = UDim2.new(1, -CONFIG.SIDEBAR_WIDTH, 1, -50)
     contentArea.Position = UDim2.new(0, CONFIG.SIDEBAR_WIDTH, 0, 50)
@@ -516,19 +618,16 @@ local function CreateUI()
     homeContent.Size = UDim2.new(1, 0, 1, 0)
     homeContent.Parent = contentArea
 
-    -- Feature 1: Auto Parry
+    -- ===== Feature 1: Auto Parry =====
     local autoParryFrame = Instance.new("Frame")
     autoParryFrame.Name = "AutoParryFrame"
     autoParryFrame.BackgroundColor3 = CONFIG.BUTTON_COLOR
-    autoParryFrame.BackgroundTransparency = 0.3
-    autoParryFrame.BorderSizePixel = 0
-    autoParryFrame.Size = UDim2.new(0.45, 0, 0, 70)
-    autoParryFrame.Position = UDim2.new(0, 15, 0, 20)
+    autoParryFrame.BackgroundTransparency = 0
+    autoParryFrame.BorderSizePixel = 1
+    autoParryFrame.BorderColor3 = CONFIG.DARK_GRAY
+    autoParryFrame.Size = UDim2.new(0.45, 0, 0, 100)
+    autoParryFrame.Position = UDim2.new(0, 20, 0, 20)
     autoParryFrame.Parent = homeContent
-
-    local autoParryCorner = Instance.new("UICorner")
-    autoParryCorner.CornerRadius = UDim.new(0, 6)
-    autoParryCorner.Parent = autoParryFrame
 
     local autoParryLabel = Instance.new("TextLabel")
     autoParryLabel.BackgroundTransparency = 1
@@ -536,67 +635,81 @@ local function CreateUI()
     autoParryLabel.TextSize = 14
     autoParryLabel.Font = Enum.Font.GothamBold
     autoParryLabel.Text = "🔄 Auto Parry"
-    autoParryLabel.Size = UDim2.new(1, -20, 0.4, 0)
-    autoParryLabel.Position = UDim2.new(0, 10, 0, 5)
+    autoParryLabel.Size = UDim2.new(1, -20, 0.35, 0)
+    autoParryLabel.Position = UDim2.new(0, 10, 0, 10)
     autoParryLabel.TextXAlignment = Enum.TextXAlignment.Left
     autoParryLabel.Parent = autoParryFrame
+
+    local autoParryDesc = Instance.new("TextLabel")
+    autoParryDesc.BackgroundTransparency = 1
+    autoParryDesc.TextColor3 = CONFIG.TEXT_SECONDARY
+    autoParryDesc.TextSize = 10
+    autoParryDesc.Font = Enum.Font.Gotham
+    autoParryDesc.Text = "Automatically parries incoming attacks with precise timing"
+    autoParryDesc.Size = UDim2.new(1, -20, 0.35, 0)
+    autoParryDesc.Position = UDim2.new(0, 10, 0.35, 0)
+    autoParryDesc.TextXAlignment = Enum.TextXAlignment.Left
+    autoParryDesc.TextWrapped = true
+    autoParryDesc.Parent = autoParryFrame
 
     local autoParryStatus = Instance.new("TextLabel")
     autoParryStatus.Name = "Status"
     autoParryStatus.BackgroundTransparency = 1
-    autoParryStatus.TextColor3 = Color3.fromRGB(150, 150, 150)
+    autoParryStatus.TextColor3 = Color3.fromRGB(150, 70, 70)
     autoParryStatus.TextSize = 11
-    autoParryStatus.Font = Enum.Font.Gotham
-    autoParryStatus.Text = "Status: OFF"
-    autoParryStatus.Size = UDim2.new(1, -20, 0.3, 0)
-    autoParryStatus.Position = UDim2.new(0, 10, 0.4, 0)
+    autoParryStatus.Font = Enum.Font.GothamBold
+    autoParryStatus.Text = "● DESATIVADO"
+    autoParryStatus.Size = UDim2.new(1, -20, 0.25, 0)
+    autoParryStatus.Position = UDim2.new(0, 10, 0.7, 0)
     autoParryStatus.TextXAlignment = Enum.TextXAlignment.Left
     autoParryStatus.Parent = autoParryFrame
 
     -- Botão ON/OFF Auto Parry
     local autoParryToggle = Instance.new("TextButton")
     autoParryToggle.Name = "AutoParryToggle"
-    autoParryToggle.BackgroundColor3 = CONFIG.BUTTON_ACCENT_COLOR
-    autoParryToggle.BackgroundTransparency = 0.3
+    autoParryToggle.BackgroundColor3 = CONFIG.BUTTON_HOVER_COLOR
+    autoParryToggle.BackgroundTransparency = 0
     autoParryToggle.TextColor3 = CONFIG.TEXT_COLOR
     autoParryToggle.TextSize = 11
     autoParryToggle.Font = Enum.Font.GothamBold
-    autoParryToggle.Text = "OFF"
-    autoParryToggle.BorderSizePixel = 0
-    autoParryToggle.Size = UDim2.new(0, 45, 0, 25)
-    autoParryToggle.Position = UDim2.new(1, -60, 0.5, -12)
+    autoParryToggle.Text = "ATIVAR"
+    autoParryToggle.BorderSizePixel = 1
+    autoParryToggle.BorderColor3 = CONFIG.DARK_GRAY
+    autoParryToggle.Size = UDim2.new(0, 70, 0, 30)
+    autoParryToggle.Position = UDim2.new(1, -85, 0.5, -15)
     autoParryToggle.Parent = autoParryFrame
-
-    local autoParryToggleCorner = Instance.new("UICorner")
-    autoParryToggleCorner.CornerRadius = UDim.new(0, 4)
-    autoParryToggleCorner.Parent = autoParryToggle
 
     local autoParryEnabled = false
 
     autoParryToggle.MouseButton1Click:Connect(function()
         autoParryEnabled = not autoParryEnabled
         ScriptState.AutoParryEnabled = autoParryEnabled
-        autoParryToggle.Text = autoParryEnabled and "ON" or "OFF"
-        autoParryToggle.BackgroundColor3 = autoParryEnabled and CONFIG.SUCCESS_COLOR or CONFIG.BUTTON_ACCENT_COLOR
-        autoParryStatus.Text = "Status: " .. (autoParryEnabled and "✓ ON" or "✕ OFF")
-        autoParryStatus.TextColor3 = autoParryEnabled and CONFIG.SUCCESS_COLOR or Color3.fromRGB(200, 100, 100)
+
+        if autoParryEnabled then
+            autoParryToggle.Text = "DESATIVAR"
+            autoParryToggle.BackgroundColor3 = CONFIG.TAB_HIGHLIGHT_COLOR
+            autoParryStatus.Text = "● ATIVADO"
+            autoParryStatus.TextColor3 = Color3.fromRGB(100, 150, 100)
+        else
+            autoParryToggle.Text = "ATIVAR"
+            autoParryToggle.BackgroundColor3 = CONFIG.BUTTON_HOVER_COLOR
+            autoParryStatus.Text = "● DESATIVADO"
+            autoParryStatus.TextColor3 = Color3.fromRGB(150, 70, 70)
+        end
     end)
 
-    CreateHoverAnimation(autoParryToggle, CONFIG.BUTTON_ACCENT_COLOR, Color3.fromRGB(255, 100, 100))
+    CreateHoverAnimation(autoParryToggle, CONFIG.BUTTON_HOVER_COLOR, CONFIG.TAB_HIGHLIGHT_COLOR)
 
-    -- Feature 2: ESP View
+    -- ===== Feature 2: ESP View =====
     local espViewFrame = Instance.new("Frame")
     espViewFrame.Name = "ESPViewFrame"
     espViewFrame.BackgroundColor3 = CONFIG.BUTTON_COLOR
-    espViewFrame.BackgroundTransparency = 0.3
-    espViewFrame.BorderSizePixel = 0
-    espViewFrame.Size = UDim2.new(0.45, 0, 0, 70)
+    espViewFrame.BackgroundTransparency = 0
+    espViewFrame.BorderSizePixel = 1
+    espViewFrame.BorderColor3 = CONFIG.DARK_GRAY
+    espViewFrame.Size = UDim2.new(0.45, 0, 0, 100)
     espViewFrame.Position = UDim2.new(0.55, 0, 0, 20)
     espViewFrame.Parent = homeContent
-
-    local espViewCorner = Instance.new("UICorner")
-    espViewCorner.CornerRadius = UDim.new(0, 6)
-    espViewCorner.Parent = espViewFrame
 
     local espViewLabel = Instance.new("TextLabel")
     espViewLabel.BackgroundTransparency = 1
@@ -604,143 +717,90 @@ local function CreateUI()
     espViewLabel.TextSize = 14
     espViewLabel.Font = Enum.Font.GothamBold
     espViewLabel.Text = "👁️ ESP View"
-    espViewLabel.Size = UDim2.new(1, -20, 0.4, 0)
-    espViewLabel.Position = UDim2.new(0, 10, 0, 5)
+    espViewLabel.Size = UDim2.new(1, -20, 0.35, 0)
+    espViewLabel.Position = UDim2.new(0, 10, 0, 10)
     espViewLabel.TextXAlignment = Enum.TextXAlignment.Left
     espViewLabel.Parent = espViewFrame
+
+    local espViewDesc = Instance.new("TextLabel")
+    espViewDesc.BackgroundTransparency = 1
+    espViewDesc.TextColor3 = CONFIG.TEXT_SECONDARY
+    espViewDesc.TextSize = 10
+    espViewDesc.Font = Enum.Font.Gotham
+    espViewDesc.Text = "View all players through walls with their position and HP"
+    espViewDesc.Size = UDim2.new(1, -20, 0.35, 0)
+    espViewDesc.Position = UDim2.new(0, 10, 0.35, 0)
+    espViewDesc.TextXAlignment = Enum.TextXAlignment.Left
+    espViewDesc.TextWrapped = true
+    espViewDesc.Parent = espViewFrame
 
     local espViewStatus = Instance.new("TextLabel")
     espViewStatus.Name = "Status"
     espViewStatus.BackgroundTransparency = 1
-    espViewStatus.TextColor3 = Color3.fromRGB(150, 150, 150)
+    espViewStatus.TextColor3 = Color3.fromRGB(150, 70, 70)
     espViewStatus.TextSize = 11
-    espViewStatus.Font = Enum.Font.Gotham
-    espViewStatus.Text = "Status: OFF"
-    espViewStatus.Size = UDim2.new(1, -20, 0.3, 0)
-    espViewStatus.Position = UDim2.new(0, 10, 0.4, 0)
+    espViewStatus.Font = Enum.Font.GothamBold
+    espViewStatus.Text = "● DESATIVADO"
+    espViewStatus.Size = UDim2.new(1, -20, 0.25, 0)
+    espViewStatus.Position = UDim2.new(0, 10, 0.7, 0)
     espViewStatus.TextXAlignment = Enum.TextXAlignment.Left
     espViewStatus.Parent = espViewFrame
 
     local espViewToggle = Instance.new("TextButton")
     espViewToggle.Name = "ESPViewToggle"
-    espViewToggle.BackgroundColor3 = CONFIG.BUTTON_ACCENT_COLOR
-    espViewToggle.BackgroundTransparency = 0.3
+    espViewToggle.BackgroundColor3 = CONFIG.BUTTON_HOVER_COLOR
+    espViewToggle.BackgroundTransparency = 0
     espViewToggle.TextColor3 = CONFIG.TEXT_COLOR
     espViewToggle.TextSize = 11
     espViewToggle.Font = Enum.Font.GothamBold
-    espViewToggle.Text = "OFF"
-    espViewToggle.BorderSizePixel = 0
-    espViewToggle.Size = UDim2.new(0, 45, 0, 25)
-    espViewToggle.Position = UDim2.new(1, -60, 0.5, -12)
+    espViewToggle.Text = "ATIVAR"
+    espViewToggle.BorderSizePixel = 1
+    espViewToggle.BorderColor3 = CONFIG.DARK_GRAY
+    espViewToggle.Size = UDim2.new(0, 70, 0, 30)
+    espViewToggle.Position = UDim2.new(1, -85, 0.5, -15)
     espViewToggle.Parent = espViewFrame
-
-    local espViewToggleCorner = Instance.new("UICorner")
-    espViewToggleCorner.CornerRadius = UDim.new(0, 4)
-    espViewToggleCorner.Parent = espViewToggle
 
     local espViewEnabled = false
 
     espViewToggle.MouseButton1Click:Connect(function()
         espViewEnabled = not espViewEnabled
         ScriptState.ESPViewEnabled = espViewEnabled
-        espViewToggle.Text = espViewEnabled and "ON" or "OFF"
-        espViewToggle.BackgroundColor3 = espViewEnabled and CONFIG.SUCCESS_COLOR or CONFIG.BUTTON_ACCENT_COLOR
-        espViewStatus.Text = "Status: " .. (espViewEnabled and "✓ ON" or "✕ OFF")
-        espViewStatus.TextColor3 = espViewEnabled and CONFIG.SUCCESS_COLOR or Color3.fromRGB(200, 100, 100)
+
+        if espViewEnabled then
+            espViewToggle.Text = "DESATIVAR"
+            espViewToggle.BackgroundColor3 = CONFIG.TAB_HIGHLIGHT_COLOR
+            espViewStatus.Text = "● ATIVADO"
+            espViewStatus.TextColor3 = Color3.fromRGB(100, 150, 100)
+        else
+            espViewToggle.Text = "ATIVAR"
+            espViewToggle.BackgroundColor3 = CONFIG.BUTTON_HOVER_COLOR
+            espViewStatus.Text = "● DESATIVADO"
+            espViewStatus.TextColor3 = Color3.fromRGB(150, 70, 70)
+        end
     end)
 
-    CreateHoverAnimation(espViewToggle, CONFIG.BUTTON_ACCENT_COLOR, Color3.fromRGB(255, 100, 100))
+    CreateHoverAnimation(espViewToggle, CONFIG.BUTTON_HOVER_COLOR, CONFIG.TAB_HIGHLIGHT_COLOR)
 
-    -- Feature 3: ESP Line
-    local espLineFrame = Instance.new("Frame")
-    espLineFrame.Name = "ESPLineFrame"
-    espLineFrame.BackgroundColor3 = CONFIG.BUTTON_COLOR
-    espLineFrame.BackgroundTransparency = 0.3
-    espLineFrame.BorderSizePixel = 0
-    espLineFrame.Size = UDim2.new(0.45, 0, 0, 70)
-    espLineFrame.Position = UDim2.new(0, 15, 0, 110)
-    espLineFrame.Parent = homeContent
-
-    local espLineCorner = Instance.new("UICorner")
-    espLineCorner.CornerRadius = UDim.new(0, 6)
-    espLineCorner.Parent = espLineFrame
-
-    local espLineLabel = Instance.new("TextLabel")
-    espLineLabel.BackgroundTransparency = 1
-    espLineLabel.TextColor3 = CONFIG.TEXT_TITLE
-    espLineLabel.TextSize = 14
-    espLineLabel.Font = Enum.Font.GothamBold
-    espLineLabel.Text = "📍 ESP Line"
-    espLineLabel.Size = UDim2.new(1, -20, 0.4, 0)
-    espLineLabel.Position = UDim2.new(0, 10, 0, 5)
-    espLineLabel.TextXAlignment = Enum.TextXAlignment.Left
-    espLineLabel.Parent = espLineFrame
-
-    local espLineStatus = Instance.new("TextLabel")
-    espLineStatus.Name = "Status"
-    espLineStatus.BackgroundTransparency = 1
-    espLineStatus.TextColor3 = Color3.fromRGB(150, 150, 150)
-    espLineStatus.TextSize = 11
-    espLineStatus.Font = Enum.Font.Gotham
-    espLineStatus.Text = "Status: OFF"
-    espLineStatus.Size = UDim2.new(1, -20, 0.3, 0)
-    espLineStatus.Position = UDim2.new(0, 10, 0.4, 0)
-    espLineStatus.TextXAlignment = Enum.TextXAlignment.Left
-    espLineStatus.Parent = espLineFrame
-
-    local espLineToggle = Instance.new("TextButton")
-    espLineToggle.Name = "ESPLineToggle"
-    espLineToggle.BackgroundColor3 = CONFIG.BUTTON_ACCENT_COLOR
-    espLineToggle.BackgroundTransparency = 0.3
-    espLineToggle.TextColor3 = CONFIG.TEXT_COLOR
-    espLineToggle.TextSize = 11
-    espLineToggle.Font = Enum.Font.GothamBold
-    espLineToggle.Text = "OFF"
-    espLineToggle.BorderSizePixel = 0
-    espLineToggle.Size = UDim2.new(0, 45, 0, 25)
-    espLineToggle.Position = UDim2.new(1, -60, 0.5, -12)
-    espLineToggle.Parent = espLineFrame
-
-    local espLineToggleCorner = Instance.new("UICorner")
-    espLineToggleCorner.CornerRadius = UDim.new(0, 4)
-    espLineToggleCorner.Parent = espLineToggle
-
-    local espLineEnabled = false
-
-    espLineToggle.MouseButton1Click:Connect(function()
-        espLineEnabled = not espLineEnabled
-        ScriptState.ESPLineEnabled = espLineEnabled
-        espLineToggle.Text = espLineEnabled and "ON" or "OFF"
-        espLineToggle.BackgroundColor3 = espLineEnabled and CONFIG.SUCCESS_COLOR or CONFIG.BUTTON_ACCENT_COLOR
-        espLineStatus.Text = "Status: " .. (espLineEnabled and "✓ ON" or "✕ OFF")
-        espLineStatus.TextColor3 = espLineEnabled and CONFIG.SUCCESS_COLOR or Color3.fromRGB(200, 100, 100)
-    end)
-
-    CreateHoverAnimation(espLineToggle, CONFIG.BUTTON_ACCENT_COLOR, Color3.fromRGB(255, 100, 100))
-
-    -- Info Box
+    -- ===== Info Box =====
     local infoBox = Instance.new("Frame")
     infoBox.Name = "InfoBox"
     infoBox.BackgroundColor3 = CONFIG.BUTTON_COLOR
-    infoBox.BackgroundTransparency = 0.4
-    infoBox.BorderSizePixel = 0
-    infoBox.Size = UDim2.new(1, -30, 0, 90)
-    infoBox.Position = UDim2.new(0, 15, 1, -110)
+    infoBox.BackgroundTransparency = 0
+    infoBox.BorderSizePixel = 1
+    infoBox.BorderColor3 = CONFIG.DARK_GRAY
+    infoBox.Size = UDim2.new(1, -40, 0, 140)
+    infoBox.Position = UDim2.new(0, 20, 1, -160)
     infoBox.Parent = homeContent
-
-    local infoCorner = Instance.new("UICorner")
-    infoCorner.CornerRadius = UDim.new(0, 6)
-    infoCorner.Parent = infoBox
 
     local infoTitle = Instance.new("TextLabel")
     infoTitle.BackgroundTransparency = 1
-    infoTitle.TextColor3 = CONFIG.ACCENT_COLOR
+    infoTitle.TextColor3 = CONFIG.ACCENT_GRAY
     infoTitle.TextSize = 12
     infoTitle.Font = Enum.Font.GothamBold
-    infoTitle.Text = "ℹ️ INFORMAÇÕES"
-    infoTitle.Size = UDim2.new(1, 0, 0.3, 0)
+    infoTitle.Text = "ℹ️ INFORMAÇÕES DO SCRIPT"
+    infoTitle.Size = UDim2.new(1, 0, 0.25, 0)
     infoTitle.TextXAlignment = Enum.TextXAlignment.Left
-    infoTitle.Position = UDim2.new(0, 10, 0, 5)
+    infoTitle.Position = UDim2.new(0, 15, 0, 10)
     infoTitle.Parent = infoBox
 
     local infoText = Instance.new("TextLabel")
@@ -748,12 +808,226 @@ local function CreateUI()
     infoText.TextColor3 = CONFIG.TEXT_COLOR
     infoText.TextSize = 11
     infoText.Font = Enum.Font.Gotham
-    infoText.Text = "Pressione 'B' para abrir/fechar\nTodas as features estão desativadas\nAnimações suaves em todos os botões"
-    infoText.Size = UDim2.new(1, -20, 0.6, 0)
-    infoText.Position = UDim2.new(0, 10, 0.3, 0)
+    infoText.Text = "▸ Pressione 'B' para abrir/fechar o painel\n▸ Sistema de Tags flutuantes ativo\n▸ Design minimalista preto e cinza\n▸ Owner com nome RGB - User com cor cinza"
+    infoText.Size = UDim2.new(1, -30, 0.7, 0)
+    infoText.Position = UDim2.new(0, 15, 0.25, 0)
     infoText.TextXAlignment = Enum.TextXAlignment.Left
     infoText.TextWrapped = true
     infoText.Parent = infoBox
+
+    -- ===== COMBAT TAB CONTENT =====
+    local combatContent = Instance.new("Frame")
+    combatContent.Name = "CombatContent"
+    combatContent.BackgroundTransparency = 1
+    combatContent.BorderSizePixel = 0
+    combatContent.Size = UDim2.new(1, 0, 1, 0)
+    combatContent.Parent = contentArea
+    combatContent.Visible = false
+
+    local combatTitle = Instance.new("TextLabel")
+    combatTitle.BackgroundTransparency = 1
+    combatTitle.TextColor3 = CONFIG.TEXT_TITLE
+    combatTitle.TextSize = 16
+    combatTitle.Font = Enum.Font.GothamBold
+    combatTitle.Text = "⚔️ Configurações de Combate"
+    combatTitle.Size = UDim2.new(1, 0, 0, 40)
+    combatTitle.Position = UDim2.new(0, 20, 0, 20)
+    combatTitle.TextXAlignment = Enum.TextXAlignment.Left
+    combatTitle.Parent = combatContent
+
+    local combatDesc = Instance.new("TextLabel")
+    combatDesc.BackgroundTransparency = 1
+    combatDesc.TextColor3 = CONFIG.TEXT_COLOR
+    combatDesc.TextSize = 12
+    combatDesc.Font = Enum.Font.Gotham
+    combatDesc.Text = "Aqui você pode ajustar as configurações de combate como range de detecção, cooldown de parry, etc."
+    combatDesc.Size = UDim2.new(1, -40, 0.3, 0)
+    combatDesc.Position = UDim2.new(0, 20, 0, 70)
+    combatDesc.TextWrapped = true
+    combatDesc.Parent = combatContent
+
+    -- ===== TAGS TAB CONTENT =====
+    local tagsContent = Instance.new("Frame")
+    tagsContent.Name = "TagsContent"
+    tagsContent.BackgroundTransparency = 1
+    tagsContent.BorderSizePixel = 0
+    tagsContent.Size = UDim2.new(1, 0, 1, 0)
+    tagsContent.Parent = contentArea
+    tagsContent.Visible = false
+
+    local tagsTitle = Instance.new("TextLabel")
+    tagsTitle.BackgroundTransparency = 1
+    tagsTitle.TextColor3 = CONFIG.TEXT_TITLE
+    tagsTitle.TextSize = 16
+    tagsTitle.Font = Enum.Font.GothamBold
+    tagsTitle.Text = "🏷️ Sistema de Tags Flutuantes"
+    tagsTitle.Size = UDim2.new(1, 0, 0, 40)
+    tagsTitle.Position = UDim2.new(0, 20, 0, 20)
+    tagsTitle.TextXAlignment = Enum.TextXAlignment.Left
+    tagsTitle.Parent = tagsContent
+
+    -- Tags Toggle
+    local tagsToggleFrame = Instance.new("Frame")
+    tagsToggleFrame.BackgroundColor3 = CONFIG.BUTTON_COLOR
+    tagsToggleFrame.BackgroundTransparency = 0
+    tagsToggleFrame.BorderSizePixel = 1
+    tagsToggleFrame.BorderColor3 = CONFIG.DARK_GRAY
+    tagsToggleFrame.Size = UDim2.new(1, -40, 0, 100)
+    tagsToggleFrame.Position = UDim2.new(0, 20, 0, 70)
+    tagsToggleFrame.Parent = tagsContent
+
+    local tagsToggleLabel = Instance.new("TextLabel")
+    tagsToggleLabel.BackgroundTransparency = 1
+    tagsToggleLabel.TextColor3 = CONFIG.TEXT_TITLE
+    tagsToggleLabel.TextSize = 14
+    tagsToggleLabel.Font = Enum.Font.GothamBold
+    tagsToggleLabel.Text = "Mostrar Tags"
+    tagsToggleLabel.Size = UDim2.new(0.7, 0, 0.4, 0)
+    tagsToggleLabel.Position = UDim2.new(0, 15, 0, 15)
+    tagsToggleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    tagsToggleLabel.Parent = tagsToggleFrame
+
+    local tagsToggleDesc = Instance.new("TextLabel")
+    tagsToggleDesc.BackgroundTransparency = 1
+    tagsToggleDesc.TextColor3 = CONFIG.TEXT_SECONDARY
+    tagsToggleDesc.TextSize = 10
+    tagsToggleDesc.Font = Enum.Font.Gotham
+    tagsToggleDesc.Text = "Exibe tags flutuantes acima de todos os usuários do script"
+    tagsToggleDesc.Size = UDim2.new(0.7, 0, 0.5, 0)
+    tagsToggleDesc.Position = UDim2.new(0, 15, 0.4, 0)
+    tagsToggleDesc.TextXAlignment = Enum.TextXAlignment.Left
+    tagsToggleDesc.TextWrapped = true
+    tagsToggleDesc.Parent = tagsToggleFrame
+
+    local tagsToggleButton = Instance.new("TextButton")
+    tagsToggleButton.BackgroundColor3 = CONFIG.TAB_HIGHLIGHT_COLOR
+    tagsToggleButton.BackgroundTransparency = 0
+    tagsToggleButton.TextColor3 = CONFIG.TEXT_COLOR
+    tagsToggleButton.TextSize = 11
+    tagsToggleButton.Font = Enum.Font.GothamBold
+    tagsToggleButton.Text = "ATIVAR"
+    tagsToggleButton.BorderSizePixel = 1
+    tagsToggleButton.BorderColor3 = CONFIG.DARK_GRAY
+    tagsToggleButton.Size = UDim2.new(0, 70, 0, 30)
+    tagsToggleButton.Position = UDim2.new(1, -85, 0.5, -15)
+    tagsToggleButton.Parent = tagsToggleFrame
+
+    tagsToggleButton.MouseButton1Click:Connect(function()
+        ScriptState.TagsEnabled = not ScriptState.TagsEnabled
+
+        if ScriptState.TagsEnabled then
+            tagsToggleButton.Text = "DESATIVAR"
+            tagsToggleButton.BackgroundColor3 = CONFIG.TAB_HIGHLIGHT_COLOR
+        else
+            tagsToggleButton.Text = "ATIVAR"
+            tagsToggleButton.BackgroundColor3 = CONFIG.BUTTON_HOVER_COLOR
+        end
+    end)
+
+    CreateHoverAnimation(tagsToggleButton, CONFIG.TAB_HIGHLIGHT_COLOR, CONFIG.BUTTON_HOVER_COLOR)
+
+    -- Tags Info
+    local tagsInfoBox = Instance.new("Frame")
+    tagsInfoBox.BackgroundColor3 = CONFIG.BUTTON_COLOR
+    tagsInfoBox.BackgroundTransparency = 0
+    tagsInfoBox.BorderSizePixel = 1
+    tagsInfoBox.BorderColor3 = CONFIG.DARK_GRAY
+    tagsInfoBox.Size = UDim2.new(1, -40, 0, 170)
+    tagsInfoBox.Position = UDim2.new(0, 20, 0, 185)
+    tagsInfoBox.Parent = tagsContent
+
+    local tagsInfoTitle = Instance.new("TextLabel")
+    tagsInfoTitle.BackgroundTransparency = 1
+    tagsInfoTitle.TextColor3 = CONFIG.ACCENT_GRAY
+    tagsInfoTitle.TextSize = 12
+    tagsInfoTitle.Font = Enum.Font.GothamBold
+    tagsInfoTitle.Text = "ℹ️ COMO FUNCIONA"
+    tagsInfoTitle.Size = UDim2.new(1, 0, 0.2, 0)
+    tagsInfoTitle.TextXAlignment = Enum.TextXAlignment.Left
+    tagsInfoTitle.Position = UDim2.new(0, 15, 0, 10)
+    tagsInfoTitle.Parent = tagsInfoBox
+
+    local tagsInfoText = Instance.new("TextLabel")
+    tagsInfoText.BackgroundTransparency = 1
+    tagsInfoText.TextColor3 = CONFIG.TEXT_COLOR
+    tagsInfoText.TextSize = 11
+    tagsInfoText.Font = Enum.Font.Gotham
+    tagsInfoText.Text = "👑 OWNER (RGB)\n   Exibe seu nome com cores RGB cíclicas\n   Apenas você vê esta tag\n\n👤 USER (Cinza)\n   Exibe para outros executadores do script\n   Cor simples cinza/branca"
+    tagsInfoText.Size = UDim2.new(1, -30, 0.8, 0)
+    tagsInfoText.Position = UDim2.new(0, 15, 0.2, 0)
+    tagsInfoText.TextXAlignment = Enum.TextXAlignment.Left
+    tagsInfoText.TextWrapped = true
+    tagsInfoText.Parent = tagsInfoBox
+
+    -- ===== SETTINGS TAB CONTENT =====
+    local settingsContent = Instance.new("Frame")
+    settingsContent.Name = "SettingsContent"
+    settingsContent.BackgroundTransparency = 1
+    settingsContent.BorderSizePixel = 0
+    settingsContent.Size = UDim2.new(1, 0, 1, 0)
+    settingsContent.Parent = contentArea
+    settingsContent.Visible = false
+
+    local settingsTitle = Instance.new("TextLabel")
+    settingsTitle.BackgroundTransparency = 1
+    settingsTitle.TextColor3 = CONFIG.TEXT_TITLE
+    settingsTitle.TextSize = 16
+    settingsTitle.Font = Enum.Font.GothamBold
+    settingsTitle.Text = "⚙️ Configurações Gerais"
+    settingsTitle.Size = UDim2.new(1, 0, 0, 40)
+    settingsTitle.Position = UDim2.new(0, 20, 0, 20)
+    settingsTitle.TextXAlignment = Enum.TextXAlignment.Left
+    settingsTitle.Parent = settingsContent
+
+    local settingsBox = Instance.new("Frame")
+    settingsBox.BackgroundColor3 = CONFIG.BUTTON_COLOR
+    settingsBox.BackgroundTransparency = 0
+    settingsBox.BorderSizePixel = 1
+    settingsBox.BorderColor3 = CONFIG.DARK_GRAY
+    settingsBox.Size = UDim2.new(1, -40, 0.5, 0)
+    settingsBox.Position = UDim2.new(0, 20, 0, 70)
+    settingsBox.Parent = settingsContent
+
+    local settingsLabel = Instance.new("TextLabel")
+    settingsLabel.BackgroundTransparency = 1
+    settingsLabel.TextColor3 = CONFIG.TEXT_COLOR
+    settingsLabel.TextSize = 12
+    settingsLabel.Font = Enum.Font.Gotham
+    settingsLabel.Text = "▸ Keybind: B (Abrir/Fechar)\n▸ Auto-Salvar Configurações: Habilitado\n▸ Animações da GUI: Habilitadas\n▸ Modo Dark: Ativado\n▸ Versão: v5.0 (Com Tags Flutuantes)"
+    settingsLabel.Size = UDim2.new(1, -20, 1, 0)
+    settingsLabel.Position = UDim2.new(0, 10, 0, 10)
+    settingsLabel.TextXAlignment = Enum.TextXAlignment.Left
+    settingsLabel.TextWrapped = true
+    settingsLabel.Parent = settingsBox
+
+    -- Navegação entre abas
+    tabs[1].func = function()
+        homeContent.Visible = true
+        combatContent.Visible = false
+        tagsContent.Visible = false
+        settingsContent.Visible = false
+    end
+
+    tabs[2].func = function()
+        homeContent.Visible = false
+        combatContent.Visible = true
+        tagsContent.Visible = false
+        settingsContent.Visible = false
+    end
+
+    tabs[3].func = function()
+        homeContent.Visible = false
+        combatContent.Visible = false
+        tagsContent.Visible = true
+        settingsContent.Visible = false
+    end
+
+    tabs[4].func = function()
+        homeContent.Visible = false
+        combatContent.Visible = false
+        tagsContent.Visible = false
+        settingsContent.Visible = true
+    end
 
     -- Drag functionality
     local dragging = false
@@ -821,9 +1095,28 @@ local function MainLoop()
         SafeCall(function()
             AutoParryLogic()
             UpdateESPDrawings()
+            UpdateTags()
         end)
         wait(0.1)
     end
+end
+
+-- ============================================================================
+-- DETECÇÃO DE NOVOS JOGADORES
+-- ============================================================================
+
+local function SetupPlayerDetection()
+    game.Players.PlayerAdded:Connect(function(player)
+        wait(1) -- Aguarda o jogador carregar completamente
+        if player.Character then
+            local isOwner = player.Name == CONFIG.OWNER_NAME
+            CreateTag(player, isOwner)
+        end
+    end)
+
+    game.Players.PlayerRemoving:Connect(function(player)
+        RemoveTag(player)
+    end)
 end
 
 -- ============================================================================
@@ -836,19 +1129,21 @@ end
 
 wait(2)
 
-print("✓ Iniciando Death Ball Script v3.0 (Novo Design)...")
+print("✓ Iniciando SPY Script v5.0 (Com Sistema de Tags)...")
 
 screenGui, mainPanel = CreateUI()
 
-print("✓ GUI criada com novo design!")
+print("✓ GUI criada com sucesso!")
+print("✓ Sistema de Tags Flutuantes ativo")
+print("✓ Owner: " .. CONFIG.OWNER_NAME .. " (RGB)")
 print("✓ Keybind: Pressione 'B' para abrir/fechar")
-print("✓ Painel arrastável pela barra de título")
 
 SetupKeybind()
+SetupPlayerDetection()
 
 task.spawn(MainLoop)
 
-print("✓ Death Ball Script v3.0 carregado com sucesso!")
+print("✓ Death Ball Script v5.0 carregado com sucesso!")
 
 game.Players.LocalPlayer.CharacterAdded:Connect(function()
     CleanupESP()
